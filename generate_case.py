@@ -25,6 +25,31 @@ if len(sys.argv) != 2:
     sys.exit(1)
 
 bus_system = sys.argv[1]
+# after: bus_system = sys.argv[1]
+NOSOLVE = any(a in ("--nosolve", "--export-only") for a in sys.argv[2:])
+
+def export_mps_only(model, outpath):
+    """
+    Write an MPS with symbolic names (so variable names don't get mangled).
+    Tries Gurobi persistent (fast) and falls back to LP writer if needed.
+    """
+    # Try GurobiPersistent without optimizing
+    try:
+        from pyomo.solvers.plugins.solvers.gurobi_persistent import GurobiPersistent
+        opt = GurobiPersistent()
+        opt.set_instance(model)
+        # Write with symbolic labels
+        opt.write(outpath, io_options={"symbolic_solver_labels": True})
+        return
+    except Exception:
+        pass
+
+    # Fallback: write LP (readable) if MPS writer isn't available
+    try:
+        model.write(outpath.replace(".mps", ".lp"), io_options={"symbolic_solver_labels": True})
+        return
+    except Exception as e:
+        raise RuntimeError(f"Failed to export MPS/LP: {e}")
 
 
 def load_bus_system(bus_system_name):
@@ -97,6 +122,27 @@ db = parsecase(
 with open("UCdata.p", "rb") as f:
     p_data = pickle.loads(pickle.load(f))
 
+# right after loading p_data:
+try:
+    # p_data[None] holds the parameters
+    import json
+    p = p_data[None]
+
+    meta = {
+        "Lup":   {str(g): int(p["Ton"][g])  for g in p["Ton"]},
+        "Ldown": {str(g): int(p["Toff"][g]) for g in p["Toff"]},
+        # Optional but useful for other separators:
+        "Pmin":  {str(g): float(p["Pmin"][g]) for g in p.get("Pmin", {})} if "Pmin" in p else {},
+        "Pmax":  {str(g): float(p["Pmax"][g]) for g in p.get("Pmax", {})} if "Pmax" in p else {},
+        "Demand": [float(d) for d in p.get("Demand", [])] if "Demand" in p else [],
+        "Reserve": [float(r) for r in p.get("Reserve", [])] if "Reserve" in p else []
+    }
+    with open(os.path.join(output_dir, model_name + ".minud.json"), "w") as jf:
+        json.dump(meta, jf, indent=2)
+
+except Exception:
+    pass
+
 num_nodes = len(net.bus)
 num_lines = len(net.line)
 num_demands = len(net.load)
@@ -107,7 +153,19 @@ model = ucml.opt_model_generator(
     num_lines=num_lines,
 )
 
+
+
 instance = model.create_instance(data=p_data)
+
+mps_path = os.path.join(output_dir, model_name + ".mps")
+
+if NOSOLVE:
+    # ensure symbolic names so separators can parse u/v/w indices
+    export_mps_only(model, mps_path)
+    print(f"[nosolve] exported {mps_path} (and .minud.json if available)")
+    sys.exit(0)
+
+
 instance.write(os.path.join(output_dir, model_name + ".mps"))
 solver = pyo.SolverFactory("gurobi")
 solver.options["NonConvex"] = 2
@@ -154,3 +212,4 @@ plt.ylabel("Power Output (MW)")
 plt.title("Unit Commitment Results")
 plt.legend(title="Generator Type")
 plt.savefig(os.path.join(output_dir, model_name + "_plot.png"))
+
