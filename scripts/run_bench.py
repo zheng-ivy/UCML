@@ -8,9 +8,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pyscipopt import Model
-from separators.python.minupdown_py import MinUpDownSepa
-from separators.python.demand_cover_py import DemandReserveCoverSepa
-from separators.python.min_generation_cover_py import MinGenCoverSepa
+from separators.python.minupdown import MinUpDownSepa
+from separators.python.demand_cover import DemandReserveCoverSepa
+from separators.python.min_generation_cover import MinGenCoverSepa
 
 def run_one(mps_path: Path, scenario: str, timelimit: int, threads: int) -> Dict[str, Any]:
     json_sidecar = mps_path.with_suffix(".minud.json")
