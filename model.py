@@ -200,12 +200,19 @@ def get_uc_constraints(model):
 
     # (9) Line flows with PTDF and limits
     def line_flow(model, line, t):
-        nodal_injection = sum(
-            model.R[i, line]
-            * (sum(model.a[g, i] * model.p[g, t] for g in model.G) - model.D[t, i])
+        return model.f[line, t] == sum(
+            model.R[i, line] *
+            (sum(model.a[g, i] * model.p[g, t] for g in model.G) - model.D[t, i])
             for i in model.N
         )
-        return model.f[line, t] == nodal_injection
+
+    # def line_flow(model, line, t):
+    #     nodal_injection = sum(
+    #         model.R[i, line]
+    #         * (sum(model.a[g, i] * model.p[g, t] for g in model.G) - model.D[t, i])
+    #         for i in model.N
+    #     )
+    #     return model.f[line, t] == nodal_injection
 
     def line_min(model, line, t):
         return -model.Fmax[line] <= model.f[line, t]

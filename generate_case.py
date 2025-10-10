@@ -4,13 +4,14 @@
 import sys
 import os
 
+import argparse
 import pyomo.environ as pyo
 from helpers import parsecase
 import pickle
 import model as ucml
 import pandapower as pp
-import pandas as pd
-import matplotlib.pyplot as plt
+# import pandas as pd
+# import matplotlib.pyplot as plt
 from pyomo.opt import SolverStatus, TerminationCondition
 import json
 
@@ -20,13 +21,27 @@ START_ID = 1
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
-if len(sys.argv) != 2:
-    print("Usage: python data_generation.py bus_sys")
-    sys.exit(1)
+parser = argparse.ArgumentParser(
+    description="Generate a case file with optional verbose output and no-solving option"
+)
+parser.add_argument(
+    "bus_system",
+    type=str,
+    help="Name of the case to generate"
+)
+parser.add_argument(
+    "-v", "--verbose",
+    action="store_true",
+    help="Enable verbose output"
+)
+parser.add_argument(
+    "--nosolve",
+    action="store_true",
+    help="Generate the case without solving it"
+)
+args = parser.parse_args()
 
-bus_system = sys.argv[1]
-# after: bus_system = sys.argv[1]
-NOSOLVE = any(a in ("--nosolve", "--export-only") for a in sys.argv[2:])
+bus_system = args.bus_system
 
 def export_mps_only(model, outpath):
     """
@@ -159,7 +174,7 @@ instance = model.create_instance(data=p_data)
 
 mps_path = os.path.join(output_dir, model_name + ".mps")
 
-if NOSOLVE:
+if args.nosolve:
     # ensure symbolic names so separators can parse u/v/w indices
     export_mps_only(model, mps_path)
     print(f"[nosolve] exported {mps_path} (and .minud.json if available)")
@@ -170,6 +185,16 @@ instance.write(os.path.join(output_dir, model_name + ".mps"))
 solver = pyo.SolverFactory("gurobi")
 solver.options["NonConvex"] = 2
 result = solver.solve(instance, tee=False)
+
+if args.verbose:
+    print("Variables:")
+    for v in instance.component_data_objects(pyo.Var):
+        print(f"  {v.name} = {v.value}")
+
+    print("\nConstraints:")
+    for c in instance.component_data_objects(pyo.Constraint):
+        print(f"  {c.name}: {c.expr}")
+
 
 if (
     result.solver.status == SolverStatus.ok
@@ -193,23 +218,23 @@ else:
     print("No optimal value found")
     sys.exit(1)
 
-Gtherm = range(1, num_therm + 1)
+# Gtherm = range(1, num_therm + 1)
 
-df = pd.DataFrame(
-    {
-        "thermal": [
-            sum(pyo.value(instance.p[g, t]) for g in Gtherm)
-            for t in range(1, time_periods + 1)
-        ],
-    }
-)
+# df = pd.DataFrame(
+#    {
+#        "thermal": [
+#            sum(pyo.value(instance.p[g, t]) for g in Gtherm)
+#            for t in range(1, time_periods + 1)
+#        ],
+#    }
+# )
 
-df.to_csv(os.path.join(output_dir, model_name + "_results.csv"), index=False)
+# uncomment for data table and plot generation
+# df.to_csv(os.path.join(output_dir, model_name + "_results.csv"), index=False)
 
-ax = df[["thermal"]].plot.area(stacked=True, figsize=(12, 6))
-plt.xlabel("Time Period")
-plt.ylabel("Power Output (MW)")
-plt.title("Unit Commitment Results")
-plt.legend(title="Generator Type")
-plt.savefig(os.path.join(output_dir, model_name + "_plot.png"))
-
+# ax = df[["thermal"]].plot.area(stacked=True, figsize=(12, 6))
+# plt.xlabel("Time Period")
+# plt.ylabel("Power Output (MW)")
+# plt.title("Unit Commitment Results")
+# plt.legend(title="Generator Type")
+# plt.savefig(os.path.join(output_dir, model_name + "_plot.png"))
